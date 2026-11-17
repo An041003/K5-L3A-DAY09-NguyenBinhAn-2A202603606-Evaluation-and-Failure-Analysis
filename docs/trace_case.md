@@ -1,30 +1,27 @@
-# Trace case: từ trace tới quyết định sai đầu tiên
+# M1/M3 — Trace case và regression test
 
-Một trace case trả lời một câu: **bước nào là bước sai đầu tiên**, và test nào sẽ bắt được nó lần sau.
+**Case chủ đạo:** `seeded_regression / C-002@11`, đối chứng `fixed / C-002@11`.
 
 ```bash
 cd src
 python -m lab9.trace_case --shape seeded_regression --claim C-002 --seed 11
-python -m lab9.trace_case --shape fixed --claim C-002 --seed 11   # đối chứng
+python -m lab9.trace_case --shape fixed --claim C-002 --seed 11
+python -m pytest -q -m student -o addopts= tests/test_lab9_integration_regression.py
 ```
 
-Lệnh in ra ba phần: các event trong trace (`reply`, `decision`, `model_override`, `error` …), ledger so với nhãn, và lý do của grader Lab 8.
-
-## Mẫu điền (mỗi nhóm 1 case, lấy từ trial đang fail trong report)
-
-| Trường | Nội dung |
+| Trường | Bằng chứng và cách đối chiếu |
 |---|---|
-| Trial | `<shape> <claim>@<seed>`, run ID trong report |
-| Triệu chứng | Grader nào fail; reply nói gì so với ledger ghi gì |
-| Bước sai đầu tiên | Số thứ tự event + kind + trích payload (≤1 dòng) |
-| Vì sao là bước *đầu tiên* | Các bước trước đó đúng ra sao (dẫn số event) |
-| Failure mode | Mã FM-xx trong `docs/failure_taxonomy.md` |
-| Đối chứng | Cùng claim@seed trên shape `fixed`: bước đó khác thế nào |
-| Regression test | Tên test + grader/assert nào bắt được; đã thấy fail trên variant lỗi và pass trên `fixed` chưa |
-| Chưa chắc chắn | Điều trace không chứng minh được |
+| Expected | C-002 trong public matrix: `status=denied`, `proposal_amount=0`, `refund_vnd=0` |
+| Injection | Ticket khai 5 ngày trễ, khác DB. `seeded_regression` kích hoạt công tắc `ticket_trust` |
+| Bước sai đầu tiên | **Event số 3 `model_override`** thay `delay_days` của DB bằng số từ ticket; thứ tự đã được replay và ghi trong [trace_evidence.md](trace_evidence.md) |
+| Vì sao là bước đầu | Các event `handoff` và `investigator` phía trước chỉ đọc và hiển thị dữ kiện; `model_override` là lúc dữ kiện DB bị ghi đè trong trạng thái reasoning |
+| Grader bắt lỗi | `DbFactKept=False`; `TrialPass` và/hoặc `RefundAmountCorrect` bắt sai outcomes tiếp theo |
+| Đối chứng | `fixed` kích hoạt `no_override`, không có event `model_override` khi dữ kiện ticket khác DB |
+| Regression test | `tests/test_lab9_integration_regression.py::test_ticket_override_detected` chạy hai shape và đối chiếu grader |
+| Bằng chứng chạy thật | [trace_evidence.md](trace_evidence.md) ghi event index, ledger, status và graders của 12 replay/control; các report tổng hợp có run ID trong eval_results.md |
 
-## Quy tắc
+**Bổ sung FM-08:** `tests/test_lab9_integration_regression.py::test_reply_amount_matches_committed_ledger`. Tạo một shape bằng `make_shape(..., {"no_override", "misreport"})` *chỉ trong test*; C-008 có proposal 35.000đ nhưng ledger cho phép 20.000đ. Grader mới phải báo sai ở variant và pass trên `fixed`.
 
-- Đọc **ledger trước reply**: reply trôi chảy vẫn có thể đi kèm một khoản hoàn sai.
-- "Bước sai đầu tiên" phải dẫn số event cụ thể, không phải "agent bị nhầm".
-- Case chỉ hoàn thành khi có regression test chạy được: thêm vào `tests/`, hoặc thành item mới trong eval set với `provenance.from_trace`.
+## FM-05: proposal sai khi ledger không đổi
+
+`tests/test_lab9_proposal_regression.py` replay C-013 trên đủ 5 seed, đối chiếu seeded_regression với fixed. Ledger vẫn bằng 0 ở cả hai; pre_deducted đổi proposal từ nhãn nguồn 35.000 xuống 0. ProposalAmountCorrect bắt sai invariant này mà không dùng outcome pass_rate để tự giải thích lỗi. Trước sửa: 5 fail; sau sửa: 5 pass.
